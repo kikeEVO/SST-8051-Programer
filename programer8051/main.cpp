@@ -6,13 +6,41 @@
 #include <sstream>
 #include <cstdlib>
 
-#include <QCoreApplication>
-#include <QSerialPort>
-#include <QByteArray>
-#include <QTimer>
+#include <cstdint>
+
+#include <stdio.h>
+#include "Serial.h"
+
+//#define DEBUG
 
 class Memory8051
 {
+private:
+    uint32_t sector_flags[16];
+    char memory[65536];
+
+    void writeByte(int address, char byte)
+    {
+        setFlag(address);
+        memory[address] = byte;
+    }
+    void setFlag(int address)
+    {
+        address = (address & 0xff80)>>7;
+        int a = address & 0x1f;
+        int b = address>>5;
+        sector_flags[b] |= 1<<a;
+    }
+    bool getFlag(int n_Sector)
+    {
+        int a = n_Sector & 0x1f;
+        int b = n_Sector>>5;
+        if(sector_flags[b] & (1<<a))
+            return true;
+//        else
+        return false;
+    }
+
 public:
     Memory8051()
     {
@@ -38,66 +66,49 @@ public:
         else
             return NULL;
     }
-private:
-    void writeByte(int address, char byte)
-    {
-        setFlag(address);
-        memory[address] = byte;
-    }
-    void setFlag(int address)
-    {
-        address = (address & 0xff80)>>7;
-        int a = address & 0x1f;
-        int b = address>>5;
-        sector_flags[b] |= 1<<a;
-    }
-    bool getFlag(int n_Sector)
-    {
-        int a = n_Sector & 0x1f;
-        int b = n_Sector>>5;
-        if(sector_flags[b] & (1<<a))
-            return true;
-        else
-            return false;
-    }
-    uint32_t sector_flags[16];
-    char memory[65536];
 };
 
-bool configSerialPort(QSerialPort*, char*);
+bool configSerialPort(CSerial* port, char*);
 void delay(int);
-void resetMcu(QSerialPort*);
-bool startComunication(QSerialPort*);
-void runMcu(QSerialPort*);
-int programMcu(QSerialPort* , Memory8051* );
+void resetMcu(CSerial*);
+bool startComunication(CSerial* port);
+void runMcu(CSerial*);
+int programMcu(CSerial* , Memory8051* );
 int checkFileSyntax(FILE*);
 int readHexFile(FILE* , Memory8051*);
 unsigned int hexStringToInt(char* , int );
-void writeMcuSector(QSerialPort* , int , char* , int );
-int readMcuSector(QSerialPort* , int , char* , int );
-bool eraseMcuSector(QSerialPort* , int , int );
+void writeMcuSector(CSerial* , int , char* , int );
+int readMcuSector(CSerial* , int , char* , int );
+bool eraseMcuSector(CSerial* , int , int );
 bool compareArrays(char* , char* , int );
-void sendSerialData(QSerialPort* , char* , int );
-int readSerialData(QSerialPort* , char* , int , int );
-bool configSerialPort(QSerialPort* , char* , int );
+void sendSerialData(CSerial* , char* , int );
+int readSerialData(CSerial* , char* , int , int );
+bool configSerialPort(CSerial* port, char* , int );
 int error(int );
-int getArguments(int argc, char *argv[], char**, char**, int*);
+//int getArguments(int argc, char *argv[], char**, char**, int*);
+int getArguments(int argc, char *argv[], int*, char*);
 
 /*****************************************************************************************/
 /*****************************************************************************************/
 int main(int argc, char *argv[])
 {
-    QCoreApplication a(argc, argv);
-
     //char* port_name = "/dev/ttyUSB0";
-    char* port_name = NULL;
-    char* file_name = NULL;
+    char port_name[] = "COM4";
+    char file_name[256];
+    int port_num;
     int baud_rate = 9600;
-    if(getArguments(argc, argv, &file_name, &port_name, &baud_rate) != 0)
+
+    std::cout << "YAEasyIAP" << std::endl;
+    std::cout << "Yet Another EasyIAP for SST89E516DR2" << std::endl;
+    std::cout << "Build: " << __DATE__ << " " << __TIME__ << std::endl;
+    std::cout << std::endl;
+
+    if(getArguments(argc, argv, &port_num, file_name) != 0)
         return 1;
 
     FILE* FileRead;
-    FileRead = fopen(file_name, "r");
+//    FileRead = fopen(file_name, "r");
+    FileRead = fopen(argv[2], "r");
     if (FileRead == NULL)
         return error(1);
 
@@ -109,36 +120,49 @@ int main(int argc, char *argv[])
 
     fclose(FileRead);
 
-    QSerialPort puerto;
-    if(!configSerialPort(&puerto, port_name, baud_rate))
+//    PORT com_port = OpenPort(4); // COM port number
+    CSerial com_port;
+
+//    if(!configSerialPort(&com_port, port_name, baud_rate))
+//        return error(4);
+//
+
+    if (!com_port.Open(port_num, baud_rate))
         return error(4);
 
-    for (int a=0; a<5; a++)
+    std::cout << "COM" << port_num << " opened" << std::endl;
+    std::cout << "PRESS [Reset Button] to start or <Ctrl-C> to abort" << std::endl;
+
+    for (int a=0; a<10; a++)
     {
-        if(startComunication(&puerto))
+        std::cout << "Connecting" << std::endl;
+
+        if(startComunication(&com_port))
         {
             std::cout << "Device connected" << std::endl;
-            if(error(programMcu(&puerto, &Memory)) == 0)
-                std::cout << "Programing done" << std::endl;
-            runMcu(&puerto);
-            std::cout << "Device runnig" << std::endl;
-            break;
-        }
-        else
-        {
-            error(5);
+	    delay(2000);
+
+            if(error(programMcu(&com_port, &Memory)) == 0)
+                std::cout << "Programming done" << std::endl;
+
+            runMcu(&com_port);
+            std::cout << "Device running" << std::endl;
+
+            com_port.Close();
+
+            return 0;              // successful exit 
         }
     }
-    //68 68
-    puerto.close();
 
-    return 0;
+    com_port.Close();
+
+    return error(5);               // failed exit
 
 }
 /*****************************************************************************************/
 /*****************************************************************************************/
 
-int programMcu(QSerialPort* port, Memory8051* Memory)
+int programMcu(CSerial* port, Memory8051* Memory)
 {
     int n_sectors = 0;
     int sectors[512];
@@ -154,115 +178,205 @@ int programMcu(QSerialPort* port, Memory8051* Memory)
     }
 
     for(int a = 0; a < n_sectors; a++)
+//    for(int a = 0; a < 2; a++)
     {
         if(!eraseMcuSector(port, sectors[a]*128, 1))
             return 8;
+
+        delay(5);
+
+#ifndef DEBUG
         std::cout << "\rErasing " << ((a+1)*100)/n_sectors << "%" << std::flush;
+#endif
     }
+
     std::cout << std::endl;
+
     for(int a = 0; a < n_sectors; a++)
-    {
-        char* array = Memory->getSector(sectors[a]);
-        writeMcuSector(port, sectors[a]*128, array, 128);
-        delay(100);
-        std::cout << "\rPrograming " << ((a+1)*100)/n_sectors << "%" << std::flush;
-    }
-    std::cout << std::endl;
-    for(int a = 0; a < n_sectors; a++)
+//    for(int a = 0; a < 2; a++)
     {
         char* array = Memory->getSector(sectors[a]);
         char sector[128];
-        if(readMcuSector(port, a*128, sector, 128) < 128)
-            if(!compareArrays(sector, array, 128))
-                return 6;
-        std::cout << "\rVerifing " << ((a+1)*100)/n_sectors << "%" << std::flush;
+
+        writeMcuSector(port, sectors[a]*128, array, 128);
+
+        if(readMcuSector(port, a*128, sector, 128) != 128) 
+            return 6;
+
+        if(!compareArrays(sector, array, 128))
+            return 6;
+
+#ifdef DEBUG
+        std::cout << "Sector " << a << " Matched" << std::endl;
+#endif
+
+#ifndef DEBUG
+        std::cout << "\rProgramming " << ((a+1)*100)/n_sectors << "%" << std::flush;
+#endif
     }
+
     std::cout << std::endl;
+
     return 0;
 }
-void runMcu(QSerialPort* port)
+
+void runMcu(CSerial* port)
 {
     char run_cmd[] = {(char)0x62, (char)0x62};
+
     sendSerialData(port, run_cmd, 2);
 }
-bool eraseMcuSector(QSerialPort* port, int address, int n_sector)
+
+bool eraseMcuSector(CSerial* port, int address, int n_sector)
 {
     char run_cmd[4] = {(char)0x0b};
+
     run_cmd[1] = (address>>8) & 0xff;
     run_cmd[2] = address & 0xff;
     run_cmd[3] = n_sector & 0xff;
 
-    sendSerialData(port, run_cmd, 4);
+/*
+    printf( "%02X %02X %02X %02X\n",
+           (unsigned char)run_cmd[0], (unsigned char)run_cmd[1],
+           (unsigned char)run_cmd[2], (unsigned char)run_cmd[3] );
+*/
 
-    readSerialData(port, run_cmd, 1, 1000);
-    if(run_cmd[0] != (char)0xc0)
+    sendSerialData(port, run_cmd, 4);
+    delay(20);
+
+    if (readSerialData(port, run_cmd, 1, 5) != 1) 
         return false;
 
+    if(run_cmd[0] != (char)0xc0) 
+        return false;
+	
     return true;
 }
-void writeMcuSector(QSerialPort* port, int address, char* array, int n_bytes)
+
+void writeMcuSector(CSerial* port, int address, char* array, int n_bytes)
 {
     char run_cmd[4] = {(char)0x0e};
     run_cmd[1] = (address>>8) & 0xff;
     run_cmd[2] = address & 0xff;
     run_cmd[3] = n_bytes & 0xff;
 
+/*
+    printf( "%02X %02X %02X %02X ",
+           (unsigned char)run_cmd[0], (unsigned char)run_cmd[1],
+           (unsigned char)run_cmd[2], (unsigned char)run_cmd[3] );
+
+    printf( "%02X %02X %02X %02X\n",
+           (unsigned char)array[0], (unsigned char)array[1],
+           (unsigned char)array[2], (unsigned char)array[3] );
+*/
+
     sendSerialData(port, run_cmd, 4);
     sendSerialData(port, array, n_bytes);
 }
-int readMcuSector(QSerialPort* port, int address, char* array, int n_bytes)
+
+int readMcuSector(CSerial* port, int address, char* array, int n_bytes)
 {
     char run_cmd[4] = {(char)0x0c};
     run_cmd[1] = (address>>8) & 0xff;
     run_cmd[2] = address & 0xff;
     run_cmd[3] = n_bytes & 0xff;
 
-    sendSerialData(port, run_cmd, 4);
+/*
+    printf( "%02X %02X %02X %02X\n",
+           (unsigned char)run_cmd[0], (unsigned char)run_cmd[1],
+           (unsigned char)run_cmd[2], (unsigned char)run_cmd[3] );
+*/
 
-    return readSerialData(port, array, n_bytes, 1000);
+    sendSerialData(port, run_cmd, 4);
+    delay(220);
+
+    return readSerialData(port, array, n_bytes, 10);
 }
-void resetMcu(QSerialPort* port)
+
+void resetMcu(CSerial* port)
 {
+/*
     port->setRequestToSend(false);
     delay(1);
     port->setRequestToSend(true);
     // 160ms to start code
+*/
 }
 
-bool startComunication(QSerialPort* port)
+bool startComunication(CSerial* port)
 {
     char baud_test[] = {(char)0x80, (char)0xe0, (char)0xf8, (char)0xfe,
                         (char)0x80, (char)0xe0, (char)0xf8, (char)0xfe,
                         (char)0x80, (char)0xe0, (char)0xf8, (char)0xfe,
                         (char)0x80, (char)0xe0, (char)0xf8, (char)0xfe};
 
-    char start_link[] = {'B','S','L',(char)0x05, (char)0x55};
+    char start_link[] = {'B','S','L',(char)0x05, (char)0x55, (char)0x60};
     char check[4];
+
 
     resetMcu(port);
     delay(5);
 
+for (int a=0; a<20; a++)
+{
     sendSerialData(port, baud_test, 16);
-    readSerialData(port, check, 2, 1000);
+    delay(20);
+//    std::cout << "." << std::endl;
+//
+
+    if (readSerialData(port, check, 2, 3) == 2)
+	break;
+
+    delay(100);
+}
+
     if(!compareArrays(check, (char*)"OK", 2))
         return false;
 
-    delay(5);
+#ifdef DEBUG
+    std::cout << "OK" << std::endl;
+#endif
 
     sendSerialData(port, start_link, 3);
-    readSerialData(port, check, 3, 1000);
-    if(!compareArrays(check, (char*)"RDY", 2))
+    delay(5);
+
+    if (readSerialData(port, check, 3, 3) != 3)
         return false;
 
-    delay(5);
+    if(!compareArrays(check, (char*)"RDY", 3))
+        return false;
+
+#ifdef DEBUG
+    std::cout << "RDY" << std::endl;
+#endif
+
     sendSerialData(port, start_link+3, 2);
-    readSerialData(port, check, 1, 1000);
-    //if((check[0] != 0x0) && (check[0] != 0x40))
-    //    return false;
+    delay(5);
+
+    if (readSerialData(port, check, 1, 3) != 1)
+        return false;
+
+/*
+    if(check[0] != 0x08)                           // this may differ
+        return false;
+*/
+
+    sendSerialData(port, start_link+5, 1);
+    delay(5);
+
+    if (readSerialData(port, check, 2, 3) != 2)
+        return false;
+
+/*
+    if((check[0] != 0x11) || (check[1] != 0x46))   // this may differ
+        return false;
+*/
 
     return true;
 }
-bool configSerialPort(QSerialPort* port, char* name, int baud_rate)
+
+
+bool configSerialPort(CSerial* port, char* name, int baud_rate)
 {
     if(baud_rate > 38400)
         baud_rate = 38400;
@@ -274,19 +388,23 @@ bool configSerialPort(QSerialPort* port, char* name, int baud_rate)
         baud_rate = baud_rate*1200;
     }
 
-    port->setPortName(name);
-    //port->setBaudRate(QSerialPort::Baud38400);
-    port->setBaudRate(baud_rate);
-    port->setDataBits(QSerialPort::Data8);
-    port->setParity(QSerialPort::NoParity);
-    port->setStopBits(QSerialPort::OneStop);
-    port->setFlowControl(QSerialPort::NoFlowControl);
-    port->setReadBufferSize(256);
+//    port->setPortName(name);
+//    port->setBaudRate(QSerialPort::Baud38400);
+//    port->setBaudRate(baud_rate);
+//    port->setDataBits(QSerialPort::Data8);
+//    port->setParity(QSerialPort::NoParity);
+//    port->setStopBits(QSerialPort::OneStop);
+//    port->setFlowControl(QSerialPort::NoFlowControl);
+//    port->setReadBufferSize(256);
 
+/*
     if(port->open(QIODevice::ReadWrite))
         return true;
     else
         return false;
+*/
+    
+    return true;
 }
 
 int checkFileSyntax(FILE* file_to_check)
@@ -346,11 +464,14 @@ int readHexFile(FILE* file_to_check, Memory8051* Memory)
 
 void delay(int millis)
 {
+/*
     QTimer ti;
     ti.setInterval(millis);
     ti.setSingleShot(true);
     ti.start();
     while(ti.remainingTime() > 0);
+*/
+    usleep(millis*1000);
 }
 unsigned int hexStringToInt(char* hex_string, int len)
 {
@@ -363,14 +484,44 @@ unsigned int hexStringToInt(char* hex_string, int len)
     ss >> hex_int;
     return hex_int;
 }
-void sendSerialData(QSerialPort* port, char* array, int len)
+void sendSerialData(CSerial* port, char* array, int len)
 {
-    port->write(array, len);
-    port->flush();
-    while(port->bytesToWrite() > 0);
+    port->SendData(array, len);
+
+//    port->write(array, len);
+//    port->flush();
+//    while(port->bytesToWrite() > 0);
 }
-int readSerialData(QSerialPort* port, char* array, int len, int msec)
+
+int readSerialData(CSerial* port, char* array, int len, int n_attempts)
 {
+    int n_bytes = 0;                      // number of bytes read
+
+//    array[0] = '\0';
+
+    while (n_attempts--) {
+        n_bytes += port->ReadData(array + n_bytes, len - n_bytes);
+
+#ifdef DEBUG
+        std::cout << n_bytes << " ";
+#endif
+
+        if (n_bytes == len) 
+            break;                        // return exactly the required number of characters
+
+        if (n_bytes > len)                // this is very unlikely 
+            break;                        // return more characters read than required
+
+	delay(5);
+    }
+
+#ifdef DEBUG
+    std::cout << std::endl;
+#endif
+
+    return n_bytes;                       // return actual number of characters read
+	    
+/*
     QTimer time_out;
     time_out.setSingleShot(true);
     time_out.start(msec);
@@ -385,6 +536,7 @@ int readSerialData(QSerialPort* port, char* array, int len, int msec)
     memcpy(array, ba.data(), ba.size());
 
     return ba.size();
+*/
 }
 
 bool compareArrays(char* array1, char* array2, int len)
@@ -397,17 +549,29 @@ bool compareArrays(char* array1, char* array2, int len)
     return true;
 }
 
-int getArguments(int argc, char *argv[], char** file_name, char** port_name, int* baud_rate)
+int getArguments(int argc, char *argv[], int* port_num, char* file_name)
 {
-    if(argc < 2)
+    if(argc != 3)
     {
+        std::cout << "Usage: yaeasyiap.exe <port_num> <filename.hex>" << std::endl;
+        std::cout << "Example: yaeasyiap.exe 1 ";
+	std::cout << "\"800294 - Mini Controller v20220909@0823 (SST).hex\"" << std::endl;
+/*
         std::cout << "Usage: prog8051 [options]" << std::endl;
         std::cout << "Options:" << std::endl;
         std::cout << "  -P <port>" << std::endl;
         std::cout << "  -F <filename.hex>" << std::endl;
         std::cout << "  -b <baudrate>" << std::endl;
+*/
         return 1;
     }
+
+    *port_num = atoi(argv[1]);
+    strcpy(file_name, argv[2]);
+
+/*
+    *port_name = argv[1];
+    *file_name = argv[2];
 
     for(int a=1; a<argc; a++)
     {
@@ -436,6 +600,7 @@ int getArguments(int argc, char *argv[], char** file_name, char** port_name, int
         else
             return 1;
     }
+*/
     return 0;
 }
 
@@ -451,7 +616,7 @@ int error(int code)
             std::cout << "file corrupted" << std::endl;
             return 1;
         case 4:
-            std::cout << "can't open Port" << std::endl;
+            std::cout << "can't open port" << std::endl;
             return 1;
         case 5:
             std::cout << "device is not responding" << std::endl;
