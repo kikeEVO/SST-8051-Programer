@@ -9,3 +9,7 @@ Changes intended:
 1. Replace QT library dependency.
 2. Support for Windows first.
 3. Support on a non-Windows platform.
+
+Use https://github.com/jjuiddong/SerialPort for Windows serial communication.
+Use Visual Studio Code to build Windows executable.
+
