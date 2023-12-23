@@ -1,14 +1,13 @@
 #include <cstdio>
 #include <iostream>
 #include <unistd.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sstream>
 #include <cstdlib>
-
 #include <cstdint>
 
-#include <stdio.h>
 #include "Serial.h"
 
 //#define DEBUG
@@ -24,6 +23,7 @@ private:
         setFlag(address);
         memory[address] = byte;
     }
+
     void setFlag(int address)
     {
         address = (address & 0xff80)>>7;
@@ -31,13 +31,15 @@ private:
         int b = address>>5;
         sector_flags[b] |= 1<<a;
     }
+
     bool getFlag(int n_Sector)
     {
         int a = n_Sector & 0x1f;
         int b = n_Sector>>5;
+
         if(sector_flags[b] & (1<<a))
             return true;
-//        else
+
         return false;
     }
 
@@ -47,18 +49,22 @@ public:
         for (int a=0; a<16; a++)
             sector_flags[a] = 0;
     }
+
     int writeSector(int address, char* array, int length)
     {
         if(length < 1)
             return 0;
 
         int a;
+
         for ( a=0; a<length; a++, address++)
         {
             writeByte(address, array[a]);
         }
+
         return a;
     }
+
     char* getSector(int n_Sector)
     {
         if(getFlag(n_Sector))
@@ -68,10 +74,8 @@ public:
     }
 };
 
-bool configSerialPort(CSerial* port, char*);
 void delay(int);
-void resetMcu(CSerial*);
-bool startComunication(CSerial* port);
+bool startCommunication(CSerial* port);
 void runMcu(CSerial*);
 int programMcu(CSerial* , Memory8051* );
 int checkFileSyntax(FILE*);
@@ -83,9 +87,7 @@ bool eraseMcuSector(CSerial* , int , int );
 bool compareArrays(char* , char* , int );
 void sendSerialData(CSerial* , char* , int );
 int readSerialData(CSerial* , char* , int , int );
-bool configSerialPort(CSerial* port, char* , int );
 int error(int );
-//int getArguments(int argc, char *argv[], char**, char**, int*);
 int getArguments(int argc, char *argv[], int*, char*);
 
 /*****************************************************************************************/
@@ -107,8 +109,9 @@ int main(int argc, char *argv[])
         return 1;
 
     FILE* FileRead;
-//    FileRead = fopen(file_name, "r");
+
     FileRead = fopen(argv[2], "r");
+
     if (FileRead == NULL)
         return error(1);
 
@@ -120,12 +123,7 @@ int main(int argc, char *argv[])
 
     fclose(FileRead);
 
-//    PORT com_port = OpenPort(4); // COM port number
     CSerial com_port;
-
-//    if(!configSerialPort(&com_port, port_name, baud_rate))
-//        return error(4);
-//
 
     if (!com_port.Open(port_num, baud_rate))
         return error(4);
@@ -137,7 +135,7 @@ int main(int argc, char *argv[])
     {
         std::cout << "Connecting" << std::endl;
 
-        if(startComunication(&com_port))
+        if(startCommunication(&com_port))
         {
             std::cout << "Device connected" << std::endl;
 	    delay(2000);
@@ -178,7 +176,6 @@ int programMcu(CSerial* port, Memory8051* Memory)
     }
 
     for(int a = 0; a < n_sectors; a++)
-//    for(int a = 0; a < 2; a++)
     {
         if(!eraseMcuSector(port, sectors[a]*128, 1))
             return 8;
@@ -193,7 +190,6 @@ int programMcu(CSerial* port, Memory8051* Memory)
     std::cout << std::endl;
 
     for(int a = 0; a < n_sectors; a++)
-//    for(int a = 0; a < 2; a++)
     {
         char* array = Memory->getSector(sectors[a]);
         char sector[128];
@@ -293,17 +289,7 @@ int readMcuSector(CSerial* port, int address, char* array, int n_bytes)
     return readSerialData(port, array, n_bytes, 10);
 }
 
-void resetMcu(CSerial* port)
-{
-/*
-    port->setRequestToSend(false);
-    delay(1);
-    port->setRequestToSend(true);
-    // 160ms to start code
-*/
-}
-
-bool startComunication(CSerial* port)
+bool startCommunication(CSerial* port)
 {
     char baud_test[] = {(char)0x80, (char)0xe0, (char)0xf8, (char)0xfe,
                         (char)0x80, (char)0xe0, (char)0xf8, (char)0xfe,
@@ -313,22 +299,18 @@ bool startComunication(CSerial* port)
     char start_link[] = {'B','S','L',(char)0x05, (char)0x55, (char)0x60};
     char check[4];
 
-
-    resetMcu(port);
     delay(5);
 
-for (int a=0; a<20; a++)
-{
-    sendSerialData(port, baud_test, 16);
-    delay(20);
-//    std::cout << "." << std::endl;
-//
+    for (int a=0; a<20; a++)
+    {
+        sendSerialData(port, baud_test, 16);
+        delay(20);
 
-    if (readSerialData(port, check, 2, 3) == 2)
-	break;
+        if (readSerialData(port, check, 2, 3) == 2)
+	    break;
 
-    delay(100);
-}
+        delay(100);
+    }
 
     if(!compareArrays(check, (char*)"OK", 2))
         return false;
@@ -357,7 +339,7 @@ for (int a=0; a<20; a++)
         return false;
 
 /*
-    if(check[0] != 0x08)                           // this may differ
+    if(check[0] != 0x08)                           // this may differ, skip check
         return false;
 */
 
@@ -368,62 +350,37 @@ for (int a=0; a<20; a++)
         return false;
 
 /*
-    if((check[0] != 0x11) || (check[1] != 0x46))   // this may differ
+    if((check[0] != 0x11) || (check[1] != 0x46))   // this may differ, skip check
         return false;
 */
 
     return true;
 }
 
-
-bool configSerialPort(CSerial* port, char* name, int baud_rate)
-{
-    if(baud_rate > 38400)
-        baud_rate = 38400;
-    else if(baud_rate < 1200)
-        baud_rate = 1200;
-    else
-    {
-        baud_rate = baud_rate/1200;
-        baud_rate = baud_rate*1200;
-    }
-
-//    port->setPortName(name);
-//    port->setBaudRate(QSerialPort::Baud38400);
-//    port->setBaudRate(baud_rate);
-//    port->setDataBits(QSerialPort::Data8);
-//    port->setParity(QSerialPort::NoParity);
-//    port->setStopBits(QSerialPort::OneStop);
-//    port->setFlowControl(QSerialPort::NoFlowControl);
-//    port->setReadBufferSize(256);
-
-/*
-    if(port->open(QIODevice::ReadWrite))
-        return true;
-    else
-        return false;
-*/
-    
-    return true;
-}
 
 int checkFileSyntax(FILE* file_to_check)
 {
     char line[256];
+
     if (file_to_check == NULL)
         return 1;
+
     rewind (file_to_check);
+
     while(fgets (line , 255 , file_to_check) != NULL)
     {
         int len = strlen(line) -1;
+
         if(len<11)
             return 2;
+
         if(line[0] != ':')
             return 2;
 
         int n_bytes = (len-1)/2;
         int bytes[n_bytes];
         int check_sum = 0;
+
         for (int a=0; a<n_bytes; a++)
         {
             bytes[a] = hexStringToInt(line+1+(a*2), 2);
@@ -434,70 +391,73 @@ int checkFileSyntax(FILE* file_to_check)
             return 2;
 
         check_sum -= bytes[n_bytes-1];
+
         if(bytes[n_bytes-1] != ((-check_sum) & 0xff))
             return 3;
     }
+
     return 0;
 }
+
 int readHexFile(FILE* file_to_check, Memory8051* Memory)
 {
     char line[256];
+
     if (file_to_check == NULL)
         return 0;
+
     rewind (file_to_check);
+
     int n = 0;
+
     while(fgets (line , 255 , file_to_check) != NULL)
     {
         int n_bytes = (strlen(line) -2)/2;
         unsigned char bytes[n_bytes];
+
         for (int a=0; a<n_bytes; a++)
         {
             bytes[a] = hexStringToInt(line+1+(a*2), 2);
         }
+
         int len = bytes[0];
         int addr = bytes[2]+(bytes[1]*256);
+
         if(bytes[3] == 0)
             n += Memory->writeSector(addr, (char*)(bytes+4), len);
     }
+
     return n;
 }
 
 void delay(int millis)
 {
-/*
-    QTimer ti;
-    ti.setInterval(millis);
-    ti.setSingleShot(true);
-    ti.start();
-    while(ti.remainingTime() > 0);
-*/
     usleep(millis*1000);
 }
+
 unsigned int hexStringToInt(char* hex_string, int len)
 {
     unsigned int hex_int;
     std::stringstream ss;
     char string_in[len+1];
+
     memcpy(string_in, hex_string, len);
     string_in[len] = 0;
+
     ss << std::hex << string_in;
     ss >> hex_int;
+
     return hex_int;
 }
+
 void sendSerialData(CSerial* port, char* array, int len)
 {
     port->SendData(array, len);
-
-//    port->write(array, len);
-//    port->flush();
-//    while(port->bytesToWrite() > 0);
 }
 
 int readSerialData(CSerial* port, char* array, int len, int n_attempts)
 {
     int n_bytes = 0;                      // number of bytes read
-
-//    array[0] = '\0';
 
     while (n_attempts--) {
         n_bytes += port->ReadData(array + n_bytes, len - n_bytes);
@@ -520,23 +480,6 @@ int readSerialData(CSerial* port, char* array, int len, int n_attempts)
 #endif
 
     return n_bytes;                       // return actual number of characters read
-	    
-/*
-    QTimer time_out;
-    time_out.setSingleShot(true);
-    time_out.start(msec);
-    do
-    {
-        port->waitForReadyRead(50);
-        if (port->bytesAvailable() >= len)
-            break;
-    }while(time_out.remainingTime() > 0);
-
-    QByteArray ba = port->readAll();
-    memcpy(array, ba.data(), ba.size());
-
-    return ba.size();
-*/
 }
 
 bool compareArrays(char* array1, char* array2, int len)
@@ -546,6 +489,7 @@ bool compareArrays(char* array1, char* array2, int len)
         if(array1[a] != array2[a])
             return false;
     }
+
     return true;
 }
 
@@ -556,51 +500,13 @@ int getArguments(int argc, char *argv[], int* port_num, char* file_name)
         std::cout << "Usage: yaeasyiap.exe <port_num> <filename.hex>" << std::endl;
         std::cout << "Example: yaeasyiap.exe 1 ";
 	std::cout << "\"800294 - Mini Controller v20220909@0823 (SST).hex\"" << std::endl;
-/*
-        std::cout << "Usage: prog8051 [options]" << std::endl;
-        std::cout << "Options:" << std::endl;
-        std::cout << "  -P <port>" << std::endl;
-        std::cout << "  -F <filename.hex>" << std::endl;
-        std::cout << "  -b <baudrate>" << std::endl;
-*/
+
         return 1;
     }
 
     *port_num = atoi(argv[1]);
     strcpy(file_name, argv[2]);
 
-/*
-    *port_name = argv[1];
-    *file_name = argv[2];
-
-    for(int a=1; a<argc; a++)
-    {
-        QByteArray argunment = argv[a];
-        if(argunment.startsWith("-P"))
-        {
-            if(argunment.size() > 2)
-                *port_name = argv[a]+2;
-            else
-                *port_name = argv[++a];
-        }
-        else if (argunment.startsWith("-F"))
-        {
-            if(argunment.size() > 2)
-                *file_name = argv[a]+2;
-            else
-                *file_name = argv[++a];
-        }
-        else if (argunment.startsWith("-b"))
-        {
-            if(argunment.size() > 2)
-                *baud_rate = atoi(argv[a]+2);
-            else
-                *baud_rate = atoi(argv[++a]);
-        }
-        else
-            return 1;
-    }
-*/
     return 0;
 }
 
@@ -633,5 +539,6 @@ int error(int code)
         default:
             break;
     }
+
     return 0;
 }
